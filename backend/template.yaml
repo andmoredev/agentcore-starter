@@ -135,11 +135,19 @@ Resources:
                 - !GetAtt AgentCoreInvokeFunction.Arn
             - Effect: Allow
               Action:
+                - logs:CreateLogDelivery
+                - logs:GetLogDelivery
+                - logs:UpdateLogDelivery
+                - logs:DeleteLogDelivery
+                - logs:ListLogDeliveries
+                - logs:PutResourcePolicy
+                - logs:DescribeResourcePolicies
+                - logs:DescribeLogGroups
                 - logs:CreateLogGroup
                 - logs:CreateLogStream
                 - logs:PutLogEvents
                 - logs:DescribeLogStreams
-              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/stepfunctions/*"
+              Resource: "*"
             - Effect: Allow
               Action:
                 - xray:PutTraceSegments
