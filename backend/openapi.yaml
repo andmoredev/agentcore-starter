@@ -90,16 +90,12 @@ paths:
         responses:
           "200":
             statusCode: "200"
-            responseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'*'"
             responseTemplates:
               application/json: |
                 #set($output = $util.parseJson($input.body.output))
                 $output
           default:
             statusCode: "500"
-            responseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'*'"
             responseTemplates:
               application/json: '{"error": "INTERNAL_SERVER_ERROR", "message": "An error occurred processing your request"}'
 
