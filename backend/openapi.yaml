@@ -1,0 +1,156 @@
+openapi: 3.0.0
+info:
+  version: 1.0.0
+  title: AgentCore Chatbot Backend API
+  description: Backend API for an AI assistant powered by Bedrock AgentCore
+
+servers:
+  - url: https://example.com/api
+    description: Example URL
+
+x-amazon-apigateway-request-validators:
+  Validate body, query string parameters, and headers:
+    validateRequestParameters: true
+    validateRequestBody: true
+
+x-amazon-apigateway-gateway-responses:
+  BAD_REQUEST_BODY:
+    statusCode: 400
+    responseTemplates:
+      application/json: '{ "message": "$context.error.validationErrorString" }'
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-User-Id'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+  DEFAULT_4XX:
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-User-Id'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+  DEFAULT_5XX:
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-User-Id'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+
+paths:
+  /query:
+    post:
+      summary: Send a request to the AI assistant
+      operationId: postQuery
+      description: Sends a user request to the AgentCore-powered assistant via Step Functions
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: true
+          description: User ID for session management
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+      responses:
+        '200':
+          description: Agent response returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResponse'
+        '400':
+          description: Bad Request - Invalid input or missing fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      x-amazon-apigateway-request-validator: Validate body, query string parameters, and headers
+      x-amazon-apigateway-integration:
+        type: aws
+        httpMethod: POST
+        uri:
+          Fn::Sub: "arn:${AWS::Partition}:apigateway:${AWS::Region}:states:action/StartSyncExecution"
+        credentials:
+          Fn::GetAtt: [ApiGatewayStepFunctionsRole, Arn]
+        requestTemplates:
+          application/json:
+            Fn::Sub: |
+              #set($body = $util.parseJson($input.body))
+              {
+                "stateMachineArn": "${AgentStateMachine}",
+                "input": "{\"request\": \"$util.escapeJavaScript($body.request)\", \"sessionId\": \"$util.escapeJavaScript($body.sessionId)\", \"userId\": \"$util.escapeJavaScript($input.params('X-User-Id'))\"}"
+              }
+        responses:
+          "200":
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            responseTemplates:
+              application/json: |
+                #set($output = $util.parseJson($input.body.output))
+                $output
+          default:
+            statusCode: "500"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            responseTemplates:
+              application/json: '{"error": "INTERNAL_SERVER_ERROR", "message": "An error occurred processing your request"}'
+
+components:
+  schemas:
+    QueryRequest:
+      type: object
+      required:
+        - request
+      properties:
+        request:
+          type: string
+          description: The user's request or question
+          minLength: 1
+          maxLength: 10000
+        sessionId:
+          type: string
+          description: Optional session ID (UUID format). If not provided, a new session will be created.
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          minLength: 36
+          maxLength: 36
+
+    QueryResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          description: Session ID for the conversation
+        request:
+          type: string
+          description: Original user request
+        response:
+          type: string
+          description: Agent's response
+        status:
+          type: string
+          description: Processing status
+          enum: ["completed", "error"]
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type
+          enum:
+            - "INVALID_REQUEST"
+            - "INTERNAL_SERVER_ERROR"
+        message:
+          type: string
+          description: Human-readable error description

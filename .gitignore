@@ -1,0 +1,37 @@
+.aws-sam/
+samconfig.yaml
+.kiro/
+.DS_Store
+
+# Backend
+backend/node_modules/
+backend/.aws-sam/
+backend/dist/
+backend/coverage/
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+backend/agents/rhyme-agent/uv.lock
+venv/
+mydocs/
+teste-agent.py
+requirements.txt
+data.parquet
+output.json
+parquet-to-json.py
+xsql.xlsx
+Xactly GenAI PoV – SOW.docx
+test.py
+backend/agents/xactly-query-agent/examples.md
+test_agent_batch.py
+.env.local
+backend/packaged-template.yaml
