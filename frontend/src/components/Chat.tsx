@@ -3,7 +3,8 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
-import { apiService } from '../services/api'
+import { WebSocketService, StreamEvent } from '../services/websocket'
+import { useAuth } from '../contexts/AuthContext'
 
 interface Message {
   id: string
@@ -11,20 +12,26 @@ interface Message {
   sender: 'user' | 'agent'
   timestamp: Date
   error?: boolean
-  retryable?: boolean
-  originalQuery?: string
+  streaming?: boolean
 }
 
 function Chat() {
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>()
   const navigate = useNavigate()
   const location = useLocation()
+  const { user } = useAuth()
+
   const [messages, setMessages] = useState<Message[]>([])
   const [inputText, setInputText] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(urlSessionId || null)
+  const [streamingText, setStreamingText] = useState('')
+  const [currentTool, setCurrentTool] = useState<string | null>(null)
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected')
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const initialQuerySent = useRef(false)
+  const wsServiceRef = useRef<WebSocketService | null>(null)
 
   // Generate a session ID if we don't have one
   useEffect(() => {
@@ -35,8 +42,138 @@ function Chat() {
     }
   }, [sessionId, navigate])
 
-  // Core send logic
-  const sendMessage = async (queryText: string) => {
+  // Initialize WebSocket connection
+  useEffect(() => {
+    if (!sessionId || !user) return
+
+    const initializeWebSocket = async () => {
+      try {
+        setConnectionStatus('connecting')
+
+        const wsService = new WebSocketService()
+        wsServiceRef.current = wsService
+
+        // Set up event listeners
+        wsService.on('stream_event', handleStreamEvent)
+        wsService.on('complete', handleComplete)
+        wsService.on('error', handleError)
+        wsService.on('close', handleClose)
+
+        // Connect to WebSocket with JWT authentication
+        await wsService.connect(sessionId, user.sub)
+
+        setConnectionStatus('connected')
+        console.log('✅ WebSocket connection ready')
+      } catch (error) {
+        console.error('❌ Failed to initialize WebSocket:', error)
+        setConnectionStatus('disconnected')
+
+        // Show error message
+        const errorMessage: Message = {
+          id: Date.now().toString(),
+          text: 'Failed to establish WebSocket connection. Please refresh the page.',
+          sender: 'agent',
+          timestamp: new Date(),
+          error: true
+        }
+        setMessages(prev => [...prev, errorMessage])
+      }
+    }
+
+    initializeWebSocket()
+
+    // Cleanup on unmount
+    return () => {
+      if (wsServiceRef.current) {
+        wsServiceRef.current.disconnect()
+        wsServiceRef.current = null
+      }
+    }
+  }, [sessionId, user])
+
+  // Handle WebSocket stream events
+  const handleStreamEvent = (data: StreamEvent) => {
+    const event = data.event
+    if (!event) return
+
+    // Handle text streaming (most important!)
+    if (event.data) {
+      setStreamingText(prev => prev + event.data)
+    }
+
+    // Handle tool usage
+    if (event.current_tool_use?.name) {
+      const toolName = event.current_tool_use.name
+      setCurrentTool(toolName)
+      console.log(`🔧 Agent using tool: ${toolName}`)
+    }
+
+    // Log lifecycle events
+    if (event.init_event_loop) {
+      console.log('🔄 Agent initialized')
+    } else if (event.start_event_loop) {
+      console.log('▶️ Agent started processing')
+    } else if (event.complete) {
+      console.log('✅ Agent completed')
+    }
+  }
+
+  // Handle completion of streaming
+  const handleComplete = () => {
+    console.log('✅ Stream complete, finalizing message...')
+
+    // Finalize the streaming message
+    if (streamingText) {
+      const agentMessage: Message = {
+        id: Date.now().toString(),
+        text: streamingText,
+        sender: 'agent',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, agentMessage])
+      setStreamingText('')
+    }
+
+    setCurrentTool(null)
+    setIsLoading(false)
+  }
+
+  // Handle WebSocket errors
+  const handleError = (data: StreamEvent) => {
+    console.error('❌ WebSocket error:', data)
+
+    const errorMessage: Message = {
+      id: Date.now().toString(),
+      text: data.message || data.error || 'An error occurred',
+      sender: 'agent',
+      timestamp: new Date(),
+      error: true
+    }
+
+    setMessages(prev => [...prev, errorMessage])
+    setStreamingText('')
+    setCurrentTool(null)
+    setIsLoading(false)
+  }
+
+  // Handle WebSocket close
+  const handleClose = () => {
+    setConnectionStatus('disconnected')
+    console.log('🔌 WebSocket connection closed')
+  }
+
+  // Send message via WebSocket
+  const handleSendMessage = () => {
+    if (!inputText.trim() || isLoading || !wsServiceRef.current?.isConnected()) {
+      if (!wsServiceRef.current?.isConnected()) {
+        alert('WebSocket not connected. Please refresh the page.')
+      }
+      return
+    }
+
+    const queryText = inputText.trim()
+
+    // Add user message to UI
     const userMessage: Message = {
       id: Date.now().toString(),
       text: queryText,
@@ -47,83 +184,38 @@ function Chat() {
     setMessages(prev => [...prev, userMessage])
     setInputText('')
     setIsLoading(true)
+    setStreamingText('')
 
-    try {
-      const result = await apiService.sendQuery({
-        request: queryText,
-        ...(sessionId ? { sessionId } : {})
-      })
-
-      const agentMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: result.response,
-        sender: 'agent',
-        timestamp: new Date()
-      }
-
-      setMessages(prev => [...prev, agentMessage])
-    } catch (error) {
-      console.error('Query failed:', error)
-
-      let errorText: string
-
-      if (error instanceof Error) {
-        const msg = error.message
-        if (msg.includes('REQUEST_TIMEOUT')) {
-          errorText = 'The request timed out. Please try again.'
-        } else if (msg.includes('NETWORK_ERROR')) {
-          errorText = 'Unable to connect to the server. Please check your connection.'
-        } else {
-          errorText = msg.includes(': ') ? msg.split(': ').slice(1).join(': ') : msg
-        }
-      } else {
-        errorText = 'An unknown error occurred. Please try again.'
-      }
-
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: errorText,
-        sender: 'agent',
-        timestamp: new Date(),
-        error: true,
-        retryable: true,
-        originalQuery: queryText
-      }
-
-      setMessages(prev => [...prev, errorMessage])
-    } finally {
-      setIsLoading(false)
-    }
+    // Send via WebSocket
+    wsServiceRef.current.sendQuery(queryText, sessionId!, user?.sub)
   }
 
   // Auto-send initial query from Home page navigation
   useEffect(() => {
     const initialQuery = (location.state as any)?.initialQuery
-    if (initialQuery && sessionId && !initialQuerySent.current) {
+    if (initialQuery && sessionId && !initialQuerySent.current && wsServiceRef.current?.isConnected()) {
       initialQuerySent.current = true
-      sendMessage(initialQuery)
-    }
-  }, [sessionId, location.state])
+      setInputText(initialQuery)
 
-  // Auto-scroll to bottom when new messages are added
+      // Wait a bit for connection to stabilize
+      setTimeout(() => {
+        if (wsServiceRef.current?.isConnected()) {
+          handleSendMessage()
+        }
+      }, 500)
+    }
+  }, [sessionId, location.state, connectionStatus])
+
+  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isLoading])
-
-  const handleSendMessage = async () => {
-    if (!inputText.trim() || isLoading) return
-    sendMessage(inputText.trim())
-  }
+  }, [messages, streamingText])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
     }
-  }
-
-  const handleRetry = async (originalQuery: string) => {
-    setInputText(originalQuery)
   }
 
   return (
@@ -137,13 +229,21 @@ function Chat() {
           >
             ← Home
           </button>
-          <h2>AgentCore Chatbot</h2>
+          <h2>AgentCore Chatbot (WebSocket)</h2>
         </div>
         {sessionId && (
           <div className="session-info">
             <div className="session-badge">
               <span className="session-label">Session:</span>
               <span className="session-id">{sessionId}</span>
+            </div>
+            <div className={`connection-status ${connectionStatus}`}>
+              <span className="status-dot"></span>
+              <span className="status-text">
+                {connectionStatus === 'connected' && '🟢 Connected'}
+                {connectionStatus === 'connecting' && '🟡 Connecting...'}
+                {connectionStatus === 'disconnected' && '🔴 Disconnected'}
+              </span>
             </div>
           </div>
         )}
@@ -161,26 +261,41 @@ function Chat() {
                   {message.text}
                 </ReactMarkdown>
               </div>
-
-              {message.error && message.retryable && message.originalQuery && (
-                <div className="retry-section">
-                  <button
-                    className="retry-button"
-                    onClick={() => handleRetry(message.originalQuery!)}
-                    disabled={isLoading}
-                    title="Retry this query"
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
             </div>
             <div className="message-timestamp">
               {message.timestamp.toLocaleTimeString()}
             </div>
           </div>
         ))}
-        {isLoading && (
+
+        {/* Streaming message */}
+        {streamingText && (
+          <div className="message agent streaming">
+            <div className="message-content">
+              <div className="message-text">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeSanitize]}
+                >
+                  {streamingText}
+                </ReactMarkdown>
+              </div>
+              {currentTool && (
+                <div className="tool-indicator">
+                  🔧 Using tool: <strong>{currentTool}</strong>
+                </div>
+              )}
+            </div>
+            <div className="streaming-indicator">
+              <span className="streaming-dot"></span>
+              <span className="streaming-dot"></span>
+              <span className="streaming-dot"></span>
+            </div>
+          </div>
+        )}
+
+        {/* Loading indicator */}
+        {isLoading && !streamingText && (
           <div className="message agent loading">
             <div className="message-content">
               <div className="loading-indicator">
@@ -194,6 +309,7 @@ function Chat() {
             </div>
           </div>
         )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -202,15 +318,19 @@ function Chat() {
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type your message..."
+          placeholder={
+            connectionStatus === 'connected'
+              ? 'Type your message...'
+              : 'Connecting...'
+          }
           rows={3}
-          disabled={isLoading}
+          disabled={isLoading || connectionStatus !== 'connected'}
         />
         <button
           onClick={handleSendMessage}
-          disabled={isLoading || !inputText.trim()}
+          disabled={isLoading || !inputText.trim() || connectionStatus !== 'connected'}
         >
-          Send
+          {isLoading ? 'Sending...' : 'Send'}
         </button>
       </div>
     </div>

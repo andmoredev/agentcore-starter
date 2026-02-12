@@ -85,6 +85,47 @@ Resources:
         EntryPoints:
           - agentcore-invoke.js
 
+  WebSocketInfoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/
+      Handler: websocket-info.handler
+      Description: Returns WebSocket connection information for JWT authentication
+      Runtime: nodejs24.x
+      Timeout: 30
+      Environment:
+        Variables:
+          AGENT_RUNTIME_ARN: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/${AgentCoreRuntime}"
+      Events:
+        GetWebSocketInfo:
+          Type: Api
+          Properties:
+            RestApiId: !Ref BackendApi
+            Path: /websocket/info
+            Method: GET
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+            - Effect: Allow
+              Action:
+                - xray:PutTraceSegments
+                - xray:PutTelemetryRecords
+                - xray:GetSamplingRules
+                - xray:GetSamplingTargets
+              Resource: "*"
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2020
+        EntryPoints:
+          - websocket-info.js
+
   ApiGatewayStepFunctionsRole:
     Type: AWS::IAM::Role
     Properties:
@@ -182,6 +223,12 @@ Resources:
       RoleArn: !GetAtt AgentCoreRole.Arn
       EnvironmentVariables:
         AGENTCORE_MEMORY_ID: !GetAtt AgentCoreShortTermMemory.MemoryId
+      # JWT Authorization Configuration
+      AuthorizerConfiguration:
+        CustomJWTAuthorizer:
+          DiscoveryUrl: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}/.well-known/openid-configuration"
+          AllowedClients:
+            - !Ref CognitoUserPoolClient
 
   AgentCoreRole:
     Type: AWS::IAM::Role
@@ -302,6 +349,60 @@ Resources:
                   - "arn:aws:bedrock:*::foundation-model/*"
                   - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:*"
 
+  # Cognito User Pool for user authentication
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub AgentChatUsers${EnvironmentHash}
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: false
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      UserAttributeUpdateSettings:
+        AttributesRequireVerificationBeforeUpdate:
+          - email
+
+  # User Pool Client for frontend application
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref CognitoUserPool
+      ClientName: !Sub ChatFrontend${EnvironmentHash}
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      PreventUserExistenceErrors: ENABLED
+      ReadAttributes:
+        - email
+        - email_verified
+      WriteAttributes:
+        - email
+
 Outputs:
   BackendApiUrl:
     Description: "API Gateway endpoint URL for Backend API"
@@ -318,3 +419,27 @@ Outputs:
   AgentStateMachineArn:
     Description: "Step Functions State Machine ARN"
     Value: !Ref AgentStateMachine
+
+  UserPoolId:
+    Description: "Cognito User Pool ID for user authentication"
+    Value: !Ref CognitoUserPool
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolId"
+
+  UserPoolClientId:
+    Description: "Cognito User Pool Client ID for frontend application"
+    Value: !Ref CognitoUserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClientId"
+
+  UserPoolRegion:
+    Description: "AWS Region where Cognito User Pool is deployed"
+    Value: !Ref AWS::Region
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolRegion"
+
+  CognitoDiscoveryUrl:
+    Description: "OIDC Discovery URL for JWT validation"
+    Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}/.well-known/openid-configuration"
+    Export:
+      Name: !Sub "${AWS::StackName}-CognitoDiscoveryUrl"

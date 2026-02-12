@@ -4561,3 +4561,127 @@
   .message-text h2 { font-size: 1.15rem; }
   .message-text h3 { font-size: 1rem; }
 }
+
+/* WebSocket Connection Status */
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.connection-status.connected {
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.connection-status.connecting {
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
+.connection-status.disconnected {
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+.connection-status.connected .status-dot {
+  background-color: #4CAF50;
+}
+
+.connection-status.connecting .status-dot {
+  background-color: #FFC107;
+}
+
+.connection-status.disconnected .status-dot {
+  background-color: #F44336;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Streaming Message Indicator */
+.message.streaming {
+  animation: fadeIn 0.3s ease-in;
+}
+
+.message.streaming .message-text {
+  position: relative;
+}
+
+.streaming-indicator {
+  display: flex;
+  gap: 4px;
+  margin-top: 0.5rem;
+  align-items: center;
+}
+
+.streaming-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--primary);
+  animation: blink 1.4s infinite both;
+}
+
+.streaming-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.streaming-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0%, 80%, 100% { opacity: 0.3; }
+  40% { opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Tool Usage Indicator */
+.tool-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(103, 58, 183, 0.1);
+  border: 1px solid rgba(103, 58, 183, 0.3);
+  border-radius: 12px;
+  font-size: 0.875rem;
+  margin-top: 0.75rem;
+  color: #673AB7;
+  font-weight: 500;
+}
+
+.message.agent .tool-indicator {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tool-indicator strong {
+  font-weight: 700;
+  color: inherit;
+}

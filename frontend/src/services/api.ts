@@ -18,6 +18,13 @@ export interface QueryErrorResponse {
   message: string;
 }
 
+export interface WebSocketInfo {
+  wsUrl: string;
+  runtimeId: string;
+  authType: string;
+  message?: string;
+}
+
 export class ApiService {
   private readonly baseUrl: string;
 
@@ -27,6 +34,29 @@ export class ApiService {
 
   private getUserId(): string {
     return getUserId();
+  }
+
+  async getWebSocketInfo(): Promise<WebSocketInfo> {
+    const url = `${this.baseUrl}/websocket/info`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to get WebSocket info: ${response.status}`);
+      }
+
+      const data: WebSocketInfo = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error getting WebSocket info:', error);
+      throw error;
+    }
   }
 
   async sendQuery(request: QueryRequest): Promise<QueryResult> {
