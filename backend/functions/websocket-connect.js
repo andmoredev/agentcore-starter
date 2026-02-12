@@ -22,9 +22,18 @@ import { HttpRequest } from '@smithy/protocol-http';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
 
 /**
+ * Encode a URI component using the AWS-compatible escapeUri behavior.
+ * This is equivalent to encodeURIComponent but also encodes !'()* per RFC 3986.
+ */
+function escapeUri(value) {
+    return encodeURIComponent(value).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+/**
  * Format a signed HttpRequest into a URL string.
- * Matches the behavior of the AWS SDK's formatUrl - query param values
- * are used as-is since SignatureV4.presign() already handles encoding.
+ * Matches the behavior of the AWS SDK's formatUrl which uses escapeUri
+ * on query parameter keys and values. SignatureV4.presign() stores raw
+ * (unencoded) values in the query object, so we must encode them here.
  */
 function formatSignedUrl(request) {
     const { protocol, hostname, path, query } = request;
@@ -34,15 +43,15 @@ function formatSignedUrl(request) {
     if (query) {
         const parts = [];
         for (const [key, value] of Object.entries(query)) {
+            const encodedKey = escapeUri(key);
             if (Array.isArray(value)) {
                 for (const v of value) {
-                    // Use values as-is (matching AWS SDK formatUrl behavior)
-                    parts.push(`${key}=${v}`);
+                    parts.push(`${encodedKey}=${escapeUri(v)}`);
                 }
             } else if (value != null) {
-                parts.push(`${key}=${value}`);
+                parts.push(`${encodedKey}=${escapeUri(value)}`);
             } else {
-                parts.push(key);
+                parts.push(encodedKey);
             }
         }
         queryString = parts.join('&');
