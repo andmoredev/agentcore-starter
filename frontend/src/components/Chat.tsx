@@ -34,8 +34,6 @@ function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const initialQuerySent = useRef(false)
   const wsServiceRef = useRef<WebSocketService | null>(null)
-  const streamingTextRef = useRef('')
-  const thinkingTextRef = useRef('')
 
   // Generate a session ID if we don't have one
   useEffect(() => {
@@ -128,24 +126,15 @@ function Chat() {
       // Move any text accumulated so far into thinking
       setStreamingText(prev => {
         if (prev) {
-          setThinkingText(t => {
-            const updated = t + prev
-            thinkingTextRef.current = updated
-            return updated
-          })
+          setThinkingText(t => t + prev)
         }
-        streamingTextRef.current = ''
         return ''
       })
     }
 
     // Handle text streaming
     if (event.data) {
-      setStreamingText(prev => {
-        const updated = prev + event.data
-        streamingTextRef.current = updated
-        return updated
-      })
+      setStreamingText(prev => prev + event.data)
     }
 
     // Log lifecycle events
@@ -160,24 +149,19 @@ function Chat() {
 
   // Handle completion of streaming
   const handleComplete = () => {
-    const text = streamingTextRef.current
-    const thinking = thinkingTextRef.current
-
-    if (text || thinking) {
+    if (streamingText || thinkingText) {
       const agentMessage: Message = {
         id: Date.now().toString(),
-        text,
-        ...(thinking ? { thinking } : {}),
+        text: streamingText,
+        ...(thinkingText ? { thinking: thinkingText } : {}),
         sender: 'agent',
         timestamp: new Date()
       }
       setMessages(prev => [...prev, agentMessage])
+      setStreamingText('')
+      setThinkingText('')
     }
 
-    streamingTextRef.current = ''
-    thinkingTextRef.current = ''
-    setStreamingText('')
-    setThinkingText('')
     setCurrentTool(null)
     setIsLoading(false)
   }
@@ -231,8 +215,6 @@ function Chat() {
     setIsLoading(true)
     setStreamingText('')
     setThinkingText('')
-    streamingTextRef.current = ''
-    thinkingTextRef.current = ''
 
     // Send via WebSocket
     wsServiceRef.current.sendQuery(queryText, sessionId!, user?.sub)
