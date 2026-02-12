@@ -24,7 +24,6 @@ export class WebSocketService {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3;
   private reconnectDelay = 2000;
-  private isAuthenticating = false;
   private authenticationCompleted = false;
 
   /**
@@ -46,42 +45,30 @@ export class WebSocketService {
 
       return new Promise((resolve, reject) => {
         try {
-          // Connect to WebSocket
-          // Note: Browser WebSocket API doesn't support custom headers,
-          // so we'll send the token in the first message after connection
-          this.ws = new WebSocket(wsUrl);
+          // Connect to WebSocket with JWT token in URL
+          // AgentCore Runtime with JWT authorizer expects token as query parameter
+          const wsUrlWithAuth = `${wsUrl}?authorization=${encodeURIComponent('Bearer ' + accessToken)}`;
+          console.log('🔗 Connecting to:', wsUrl.replace(/\/\/.*?\./, '//***.'));
+
+          this.ws = new WebSocket(wsUrlWithAuth);
 
           this.ws.onopen = () => {
-            console.log('✅ WebSocket connection established');
+            console.log('✅ WebSocket connection established with JWT authentication');
 
-            // Send authentication immediately after connection
-            // AgentCore Runtime expects JWT in initial request
-            this.isAuthenticating = true;
-            this.sendAuthentication(accessToken, sessionId, userId);
+            // With JWT in URL, authentication is validated at connection time by AgentCore Runtime
+            // No need to send auth message - connection establishment means auth succeeded
+            this.authenticationCompleted = true;
+            this.reconnectAttempts = 0;
 
-            // Wait for authentication to complete before resolving
-            setTimeout(() => {
-              if (this.authenticationCompleted) {
-                this.reconnectAttempts = 0;
-                resolve();
-              } else {
-                // Still waiting for auth, but don't block
-                resolve();
-              }
-            }, 500);
+            console.log('🔐 JWT authentication successful, ready to send queries');
+            resolve();
           };
 
           this.ws.onmessage = (event) => {
             try {
               const data: StreamEvent = JSON.parse(event.data);
 
-              // Handle authentication success
-              if (data.type === 'auth_success') {
-                console.log('✅ Authentication successful');
-                this.authenticationCompleted = true;
-                this.isAuthenticating = false;
-                return;
-              }
+              console.log('📩 WebSocket message received:', data.type);
 
               // Emit to listeners
               this.emit('message', data);
@@ -92,18 +79,25 @@ export class WebSocketService {
               }
             } catch (error) {
               console.error('❌ Failed to parse WebSocket message:', error);
+              console.error('Raw message:', event.data);
             }
           };
 
           this.ws.onerror = (error) => {
             console.error('❌ WebSocket error:', error);
+            console.error('WebSocket readyState:', this.ws?.readyState);
+            console.error('This may indicate:');
+            console.error('  1. Invalid or expired JWT token');
+            console.error('  2. AgentCore Runtime not accepting connections');
+            console.error('  3. Network/CORS issue');
+
             this.emit('error', {
               type: 'error',
-              error: 'WebSocket connection error'
+              error: 'WebSocket connection error - check JWT token and AgentCore Runtime status'
             });
 
-            if (this.isAuthenticating) {
-              reject(new Error('WebSocket connection failed during authentication'));
+            if (!this.authenticationCompleted) {
+              reject(new Error('WebSocket connection failed - likely JWT authentication issue'));
             }
           };
 
@@ -149,26 +143,6 @@ export class WebSocketService {
     }
   }
 
-  /**
-   * Send authentication token (sent immediately after WebSocket connection)
-   */
-  private sendAuthentication(accessToken: string, sessionId: string, userId?: string): void {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      // For AgentCore Runtime, we send the token in the Authorization header
-      // Since browser WebSocket doesn't support headers, we include it in the first message
-      // The backend will extract the token from this message or context
-      console.log('🔐 Sending authentication...');
-
-      // Note: AgentCore Runtime with JWT authorizer validates the token at connection time
-      // We still send session info as the first message
-      this.ws.send(JSON.stringify({
-        type: 'auth',
-        token: accessToken,
-        sessionId,
-        userId
-      }));
-    }
-  }
 
   /**
    * Send a query to the agent
@@ -180,13 +154,6 @@ export class WebSocketService {
         type: 'error',
         error: 'WebSocket connection is not open'
       });
-      return;
-    }
-
-    if (this.isAuthenticating) {
-      console.warn('⚠️ Still authenticating, queuing message...');
-      // Wait for authentication to complete
-      setTimeout(() => this.sendQuery(request, sessionId, userId), 500);
       return;
     }
 
@@ -234,7 +201,6 @@ export class WebSocketService {
     }
     this.listeners.clear();
     this.authenticationCompleted = false;
-    this.isAuthenticating = false;
   }
 
   /**
