@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authService } from '../services/auth'
+import { useAuth } from '../contexts/AuthContext'
 import './Auth.css'
 
 function Login() {
@@ -11,6 +12,7 @@ function Login() {
   const [needsConfirmation, setNeedsConfirmation] = useState(false)
   const [confirmationCode, setConfirmationCode] = useState('')
   const navigate = useNavigate()
+  const { refreshUser } = useAuth()
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
@@ -19,7 +21,9 @@ function Login() {
 
     try {
       await authService.signIn(email, password)
-      console.log('Login successful, redirecting...')
+      console.log('Login successful, refreshing user context...')
+      await refreshUser()
+      console.log('User context updated, redirecting...')
       navigate('/')
     } catch (err: any) {
       console.error('Login error:', err)
@@ -47,6 +51,7 @@ function Login() {
     try {
       await authService.confirmSignUp(email, confirmationCode)
       await authService.signIn(email, password)
+      await refreshUser()
       navigate('/')
     } catch (err: any) {
       console.error('Confirmation error:', err)

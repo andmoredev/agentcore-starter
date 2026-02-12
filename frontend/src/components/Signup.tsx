@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authService } from '../services/auth'
+import { useAuth } from '../contexts/AuthContext'
 import './Auth.css'
 
 function Signup() {
@@ -12,6 +13,7 @@ function Signup() {
   const [needsConfirmation, setNeedsConfirmation] = useState(false)
   const [confirmationCode, setConfirmationCode] = useState('')
   const navigate = useNavigate()
+  const { refreshUser } = useAuth()
 
   const validatePassword = (pwd: string): string | null => {
     if (pwd.length < 8) {
@@ -77,6 +79,7 @@ function Signup() {
     try {
       await authService.confirmSignUp(email, confirmationCode)
       await authService.signIn(email, password)
+      await refreshUser()
       console.log('Email confirmed and logged in')
       navigate('/')
     } catch (err: any) {
