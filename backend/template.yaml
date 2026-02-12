@@ -175,8 +175,6 @@ Resources:
           - websocket-connect.js
         External:
           - '@aws-sdk/*'
-          - '@aws-crypto/*'
-          - '@smithy/*'
 
   ApiGatewayStepFunctionsRole:
     Type: AWS::IAM::Role
