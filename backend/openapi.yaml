@@ -84,13 +84,6 @@ paths:
         httpMethod: POST
         uri:
           Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketConnectFunction.Arn}/invocations
-      x-amazon-apigateway-integration:
-        type: mock
-        requestTemplates:
-          application/json: '{"statusCode": 200}'
-        responses:
-          default:
-            statusCode: 200
 
   /websocket/info:
     get:
@@ -115,13 +108,6 @@ paths:
         httpMethod: POST
         uri:
           Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketInfoFunction.Arn}/invocations
-      x-amazon-apigateway-integration:
-        type: mock
-        requestTemplates:
-          application/json: '{"statusCode": 200}'
-        responses:
-          default:
-            statusCode: 200
 
   /query:
     post:

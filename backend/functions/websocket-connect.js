@@ -2,32 +2,60 @@
  * WebSocket Connect Function
  *
  * Generates a presigned WebSocket URL for browser clients using AWS SigV4.
- * This follows the AWS-recommended approach for browser-based WebSocket connections
- * to AgentCore Runtime, where authentication is embedded in query parameters.
+ * Based on the official AWS sample:
+ * https://github.com/awslabs/amazon-bedrock-agentcore-samples/tree/main/01-tutorials/01-AgentCore-runtime/06-bi-directional-streaming
  *
  * Authentication flow:
  * 1. User authenticates with Cognito (JWT validated by API Gateway)
  * 2. This function generates AWS SigV4 presigned WebSocket URL
  * 3. Browser connects with presigned URL (no custom headers needed)
- * 4. User identity passed via session ID in the WebSocket messages
+ * 4. User identity passed via custom header query parameter
  */
 
 import { SignatureV4 } from '@aws-sdk/signature-v4';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { HttpRequest } from '@smithy/protocol-http';
 import { defaultProvider } from '@aws-sdk/credential-provider-node';
-import { formatUrl } from '@aws-sdk/util-format-url';
+
+/**
+ * Format a signed HttpRequest into a URL string.
+ * Inline implementation to avoid dependency on @aws-sdk/util-format-url
+ * which may not be available in the Lambda runtime.
+ */
+function formatSignedUrl(request) {
+    const { protocol, hostname, path, query } = request;
+    const proto = protocol?.endsWith(':') ? protocol : `${protocol}:`;
+
+    let queryString = '';
+    if (query) {
+        const parts = [];
+        for (const [key, value] of Object.entries(query)) {
+            if (Array.isArray(value)) {
+                for (const v of value) {
+                    parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(v)}`);
+                }
+            } else if (value != null) {
+                parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+            } else {
+                parts.push(encodeURIComponent(key));
+            }
+        }
+        queryString = parts.join('&');
+    }
+
+    return `${proto}//${hostname}${path}${queryString ? `?${queryString}` : ''}`;
+}
 
 export const handler = async (event) => {
     try {
-        console.log('🔐 Presigned WebSocket URL request received');
+        console.log('Presigned WebSocket URL request received');
 
         // Get authenticated user from Cognito authorizer
         const userClaims = event.requestContext?.authorizer?.claims;
         const userId = userClaims?.sub;
         const userEmail = userClaims?.email;
 
-        console.log('👤 Authenticated user:', { userId, email: userEmail });
+        console.log('Authenticated user:', { userId, email: userEmail });
 
         const region = process.env.AWS_REGION;
         const runtimeArn = process.env.AGENT_RUNTIME_ARN;
@@ -40,27 +68,31 @@ export const handler = async (event) => {
         const body = JSON.parse(event.body || '{}');
         const sessionId = body.sessionId || crypto.randomUUID();
 
-        console.log('📋 Session ID:', sessionId);
+        console.log('Session ID:', sessionId);
 
-        // Construct WebSocket URL with URL-encoded ARN
+        // Construct WebSocket URL with URL-encoded ARN (per AWS docs)
         const encodedArn = encodeURIComponent(runtimeArn);
         const wsHost = `bedrock-agentcore.${region}.amazonaws.com`;
         const wsPath = `/runtimes/${encodedArn}/ws`;
 
-        console.log('🔗 Base WebSocket path:', wsPath);
+        console.log('WebSocket host:', wsHost);
+        console.log('WebSocket path:', wsPath);
 
         // Get AWS credentials using the Lambda execution role
         const credentialsProvider = defaultProvider();
         const credentials = await credentialsProvider();
 
-        console.log('✅ AWS credentials obtained');
-
-        // Build query parameters including session ID and user ID
+        // Build query parameters
+        // qualifier=DEFAULT is required per the AWS sample
         const queryParams = {
-            'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': sessionId,
+            'qualifier': 'DEFAULT',
         };
 
-        // If we want to pass user ID as a custom header (accessible in agent)
+        // Pass session ID and user ID as custom header query params
+        // These are received as headers in the agent: x-amzn-bedrock-agentcore-runtime-custom-*
+        if (sessionId) {
+            queryParams['X-Amzn-Bedrock-AgentCore-Runtime-Session-Id'] = sessionId;
+        }
         if (userId) {
             queryParams['X-Amzn-Bedrock-AgentCore-Runtime-Custom-User-Id'] = userId;
         }
@@ -92,11 +124,11 @@ export const handler = async (event) => {
             signingDate: new Date(),
         });
 
-        // Convert to WebSocket URL
-        const presignedHttpsUrl = formatUrl(signedRequest);
+        // Convert signed request to URL
+        const presignedHttpsUrl = formatSignedUrl(signedRequest);
         const presignedWsUrl = presignedHttpsUrl.replace('https://', 'wss://');
 
-        console.log('✅ Presigned WebSocket URL generated');
+        console.log('Presigned WebSocket URL generated');
         console.log('   Session:', sessionId);
         console.log('   User:', userId);
         console.log('   Expires in:', expiresIn, 'seconds');
@@ -119,7 +151,7 @@ export const handler = async (event) => {
         };
 
     } catch (error) {
-        console.error('❌ Error generating presigned URL:', error);
+        console.error('Error generating presigned URL:', error);
         console.error('Error stack:', error.stack);
 
         return {

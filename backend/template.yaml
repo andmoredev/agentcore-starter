@@ -150,6 +150,7 @@ Resources:
         - Statement:
             - Effect: Allow
               Action:
+                - bedrock-agentcore:InvokeAgentRuntime
                 - bedrock-agentcore:InvokeAgentRuntimeWithWebSocketStream
               Resource: !Sub "arn:aws:bedrock-agentcore:${AWS::Region}:${AWS::AccountId}:runtime/*"
             - Effect: Allow
@@ -174,6 +175,8 @@ Resources:
           - websocket-connect.js
         External:
           - '@aws-sdk/*'
+          - '@aws-crypto/*'
+          - '@smithy/*'
 
   ApiGatewayStepFunctionsRole:
     Type: AWS::IAM::Role
