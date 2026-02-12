@@ -89,10 +89,7 @@ async def websocket_handler(websocket, context):
         headers = context.request_headers or {}
         user_id = headers.get("x-amzn-bedrock-agentcore-runtime-custom-user-id")
 
-        print("✅ WebSocket connection established")
-        print(f"   User ID: {user_id}")
-        print(f"   Session (from context): {context.session_id}")
-        print(f"   Headers: {list(headers.keys())[:10]}")  # Log first 10 header keys for debugging
+        print(f"WebSocket connected - User: {user_id}, Context session: {context.session_id}")
 
         # Message loop — keep connection open for multi-turn conversation
         while True:
@@ -115,8 +112,7 @@ async def websocket_handler(websocket, context):
                 })
                 continue
 
-            print(f"📨 Request received - Session: {msg_session_id}")
-            print(f"   Request: {request[:100]}{'...' if len(request) > 100 else ''}")
+            print(f"Request received - Session: {msg_session_id}")
 
             # Create agent on first message, or recreate if session changes
             if agent is None or msg_session_id != session_id:
@@ -130,16 +126,9 @@ async def websocket_handler(websocket, context):
                     system_prompt=SYSTEM_PROMPT,
                     session_manager=session_manager,
                 )
-                print(f"🤖 Agent initialized - Model: {BEDROCK_MODEL_ID}, Session: {session_id}")
-                print(f"   Agent ID: {agent.agent_id}, Messages loaded: {len(agent.messages)}")
+                print(f"Agent initialized - Model: {BEDROCK_MODEL_ID}, Session: {session_id}, Messages loaded: {len(agent.messages)}")
 
-            # Log conversation state before processing
-            print(f"   📊 Messages before call: {len(agent.messages)}")
-            for i, msg in enumerate(agent.messages):
-                role = msg.get("role", "unknown")
-                content = msg.get("content", [])
-                content_preview = str(content)[:80] if content else "(empty)"
-                print(f"      [{i}] {role}: {content_preview}")
+            print(f"Messages in context: {len(agent.messages)}")
 
             # Stream events back to client in real-time
             async for event in agent.stream_async(request):
@@ -150,27 +139,20 @@ async def websocket_handler(websocket, context):
                 client_event = None
 
                 if event.get("data"):
-                    # Text chunk
                     client_event = {"data": event["data"]}
-                    data_preview = event["data"][:50]
-                    if len(event["data"]) > 50:
-                        data_preview += "..."
-                    print(f"   📝 Text chunk: {data_preview}")
 
                 elif event.get("current_tool_use"):
                     tool = event["current_tool_use"]
                     tool_name = tool.get("name")
                     if tool_name:
                         client_event = {"current_tool_use": {"name": tool_name, "tool_use_id": tool.get("tool_use_id")}}
-                        print(f"   🔧 Using tool: {tool_name}")
+                        print(f"Tool use: {tool_name}")
 
                 elif event.get("init_event_loop"):
                     client_event = {"init_event_loop": True}
-                    print("   🔄 Event loop initialized")
 
                 elif event.get("complete"):
                     client_event = {"complete": True}
-                    print("   ✅ Agent processing complete")
 
                 # Only send events that have useful client-facing data
                 if client_event is not None:
@@ -185,8 +167,7 @@ async def websocket_handler(websocket, context):
                 "session_id": session_id
             })
 
-            print(f"✅ Stream complete for session: {session_id}")
-            print(f"   📊 Messages after call: {len(agent.messages)}")
+            print(f"Response complete - Session: {session_id}, Messages: {len(agent.messages)}")
 
     except json.JSONDecodeError as e:
         print(f"❌ JSON decode error: {e}")
@@ -225,7 +206,6 @@ async def websocket_handler(websocket, context):
             pass
 
 
-# Keep the HTTP entrypoint for backward compatibility (optional)
 @app.entrypoint
 def invoke(payload):
     """
