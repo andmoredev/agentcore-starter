@@ -40,6 +40,7 @@ jobs:
       backend_stack_name: ${{ steps.prepare-parameters.outputs.backend_stack_name }}
       frontend_stack_name: ${{ steps.prepare-parameters.outputs.frontend_stack_name }}
       project_name: ${{ steps.config.outputs.project_name }}
+      resource_prefix: ${{ steps.prepare-parameters.outputs.resource_prefix }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,12 +63,14 @@ jobs:
           ENV_NAME="dev"
           BACKEND_STACK_NAME="${{ steps.config.outputs.project_name }}-backend-$ENV_DESCRIPTOR"
           FRONTEND_STACK_NAME="${{ steps.config.outputs.project_name }}-frontend-$ENV_DESCRIPTOR"
+          RESOURCE_PREFIX=$(echo "${{ steps.config.outputs.project_name }}" | tr '-' '_')_${ENV_HASH}
 
           echo "env_descriptor=$ENV_DESCRIPTOR" >> $GITHUB_OUTPUT
           echo "env_hash=$ENV_HASH" >> $GITHUB_OUTPUT
           echo "env_name=$ENV_NAME" >> $GITHUB_OUTPUT
           echo "backend_stack_name=$BACKEND_STACK_NAME" >> $GITHUB_OUTPUT
           echo "frontend_stack_name=$FRONTEND_STACK_NAME" >> $GITHUB_OUTPUT
+          echo "resource_prefix=$RESOURCE_PREFIX" >> $GITHUB_OUTPUT
 
           cat >> $GITHUB_STEP_SUMMARY << EOF
           # Dev Environment Deployment
@@ -171,6 +174,7 @@ jobs:
           AGENT_DIRECT_DEPLOY_KEY: ${{ needs.collect-agent-artifacts.outputs.agent-key }}
           AWS_REGION: ${{ env.AWS_REGION }}
           PROJECT_NAME: ${{ needs.prepare-deployment.outputs.project_name }}
+          RESOURCE_PREFIX: ${{ needs.prepare-deployment.outputs.resource_prefix }}
 
         run: |
           envsubst < samconfig.yaml.template > samconfig.yaml

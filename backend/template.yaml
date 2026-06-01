@@ -16,6 +16,11 @@ Parameters:
     Type: String
     Description: A hash of the current environment
 
+  ResourcePrefix:
+    Type: String
+    Description: Alphanumeric prefix for AgentCore resource names (no dashes allowed)
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9_]*'
+
 Globals:
   Function:
     Timeout: 30
@@ -209,7 +214,7 @@ Resources:
   AgentCoreShortTermMemory:
     Type: AWS::BedrockAgentCore::Memory
     Properties:
-      Name: !Sub '${AWS::StackName}-memory'
+      Name: !Sub '${ResourcePrefix}_memory'
       Description: Short-term memory for agent conversation persistence
       MemoryExecutionRoleArn: !GetAtt AgentCoreRole.Arn
       EventExpiryDuration: 30
@@ -226,7 +231,7 @@ Resources:
           EntryPoint:
             - agent.py
           Runtime: PYTHON_3_13
-      AgentRuntimeName: !Sub '${AWS::StackName}-agent'
+      AgentRuntimeName: !Sub '${ResourcePrefix}_agent'
       NetworkConfiguration:
         NetworkMode: PUBLIC
       RoleArn: !GetAtt AgentCoreRole.Arn

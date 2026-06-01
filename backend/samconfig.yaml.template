@@ -27,6 +27,7 @@ default:
         - ArtifactsBucketName=$ARTIFACTS_BUCKET_NAME
         - AgentDirectDeployKey=$AGENT_DIRECT_DEPLOY_KEY
         - EnvironmentHash=$ENV_HASH
+        - ResourcePrefix=$RESOURCE_PREFIX
 
   delete:
     parameters:
