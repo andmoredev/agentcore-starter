@@ -196,21 +196,13 @@ function Chat() {
     console.log('🔌 WebSocket connection closed')
   }
 
-  // Send message via WebSocket
-  const handleSendMessage = () => {
-    if (!inputText.trim() || isLoading || !wsServiceRef.current?.isConnected()) {
-      if (!wsServiceRef.current?.isConnected()) {
-        alert('WebSocket not connected. Please refresh the page.')
-      }
-      return
-    }
+  // Send a specific message directly (used for auto-send from Home page)
+  const sendMessage = (text: string) => {
+    if (!text.trim() || isLoading || !wsServiceRef.current?.isConnected()) return
 
-    const queryText = inputText.trim()
-
-    // Add user message to UI
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: queryText,
+      text: text.trim(),
       sender: 'user',
       timestamp: new Date()
     }
@@ -221,8 +213,19 @@ function Chat() {
     setStreamingText('')
     setThinkingText('')
 
-    // Send via WebSocket
-    wsServiceRef.current.sendQuery(queryText, sessionId!, user?.sub)
+    wsServiceRef.current.sendQuery(text.trim(), sessionId!, user?.sub)
+  }
+
+  // Send message via WebSocket (from input box)
+  const handleSendMessage = () => {
+    if (!inputText.trim() || isLoading || !wsServiceRef.current?.isConnected()) {
+      if (!wsServiceRef.current?.isConnected()) {
+        alert('WebSocket not connected. Please refresh the page.')
+      }
+      return
+    }
+
+    sendMessage(inputText)
   }
 
   // Auto-send initial query from Home page navigation
@@ -230,14 +233,7 @@ function Chat() {
     const initialQuery = (location.state as any)?.initialQuery
     if (initialQuery && sessionId && !initialQuerySent.current && wsServiceRef.current?.isConnected()) {
       initialQuerySent.current = true
-      setInputText(initialQuery)
-
-      // Wait a bit for connection to stabilize
-      setTimeout(() => {
-        if (wsServiceRef.current?.isConnected()) {
-          handleSendMessage()
-        }
-      }, 500)
+      sendMessage(initialQuery)
     }
   }, [sessionId, location.state, connectionStatus])
 
