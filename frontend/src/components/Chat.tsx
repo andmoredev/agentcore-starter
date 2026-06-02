@@ -34,6 +34,8 @@ function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const initialQuerySent = useRef(false)
   const wsServiceRef = useRef<WebSocketService | null>(null)
+  const streamingTextRef = useRef('')
+  const thinkingTextRef = useRef('')
 
   // Generate a session ID if we don't have one
   useEffect(() => {
@@ -126,15 +128,24 @@ function Chat() {
       // Move any text accumulated so far into thinking
       setStreamingText(prev => {
         if (prev) {
-          setThinkingText(t => t + prev)
+          setThinkingText(t => {
+            const newThinking = t + prev
+            thinkingTextRef.current = newThinking
+            return newThinking
+          })
         }
+        streamingTextRef.current = ''
         return ''
       })
     }
 
     // Handle text streaming
     if (event.data) {
-      setStreamingText(prev => prev + event.data)
+      setStreamingText(prev => {
+        const newText = prev + event.data
+        streamingTextRef.current = newText
+        return newText
+      })
     }
 
     // Log lifecycle events
@@ -144,29 +155,30 @@ function Chat() {
       console.log('▶️ Agent started processing')
     } else if (event.complete) {
       console.log('✅ Agent completed')
+      handleComplete()
     }
   }
 
   // Handle completion of streaming
   const handleComplete = () => {
-    // Use functional state updates to read the latest values and avoid stale closures
-    setStreamingText(currentStreamingText => {
-      setThinkingText(currentThinkingText => {
-        if (currentStreamingText || currentThinkingText) {
-          const agentMessage: Message = {
-            id: Date.now().toString(),
-            text: currentStreamingText,
-            ...(currentThinkingText ? { thinking: currentThinkingText } : {}),
-            sender: 'agent',
-            timestamp: new Date()
-          }
-          setMessages(prev => [...prev, agentMessage])
-        }
-        return ''
-      })
-      return ''
-    })
+    const currentStreamingText = streamingTextRef.current
+    const currentThinkingText = thinkingTextRef.current
 
+    if (currentStreamingText || currentThinkingText) {
+      const agentMessage: Message = {
+        id: Date.now().toString(),
+        text: currentStreamingText,
+        ...(currentThinkingText ? { thinking: currentThinkingText } : {}),
+        sender: 'agent',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, agentMessage])
+    }
+
+    streamingTextRef.current = ''
+    thinkingTextRef.current = ''
+    setStreamingText('')
+    setThinkingText('')
     setCurrentTool(null)
     setIsLoading(false)
   }
@@ -184,6 +196,8 @@ function Chat() {
     }
 
     setMessages(prev => [...prev, errorMessage])
+    streamingTextRef.current = ''
+    thinkingTextRef.current = ''
     setStreamingText('')
     setThinkingText('')
     setCurrentTool(null)
@@ -210,6 +224,8 @@ function Chat() {
     setMessages(prev => [...prev, userMessage])
     setInputText('')
     setIsLoading(true)
+    streamingTextRef.current = ''
+    thinkingTextRef.current = ''
     setStreamingText('')
     setThinkingText('')
 
