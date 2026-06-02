@@ -2,7 +2,7 @@
   "id": "FEAT-001",
   "type": "feat",
   "description": "Move WebSocket connection lifecycle from Chat component to an app-level WebSocket context, enabling eager connection right after authentication.",
-  "status": "in_progress",
+  "status": "completed",
   "steps": [
     "Step 1: Update `frontend/src/services/api.ts` - Make sessionId optional in `getPresignedWebSocketUrl()`. Change the signature to `getPresignedWebSocketUrl(accessToken: string, sessionId?: string)` (note: reorder params so accessToken comes first since it's always required). Update the fetch body to only include sessionId if provided: `body: JSON.stringify(sessionId ? { sessionId } : {})`.",
     "Step 2: Update `frontend/src/services/websocket.ts` - Make sessionId optional in the `connect()` method signature: `async connect(sessionId?: string): Promise<void>`. Update the call to `apiService.getPresignedWebSocketUrl(accessToken, sessionId)` to match the new API signature. The rest of the WebSocket connection logic remains the same.",
@@ -26,5 +26,5 @@
     "Run `npm run build` in frontend/ directory and confirm successful build output"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "TypeScript strict mode with exactOptionalPropertyTypes had no issues since the optional sessionId param uses standard '?' syntax. NODE_OPTIONS env var needed to be cleared to run tsc/build due to a missing proxy-bootstrap.js preload module. Build produces clean output with no warnings."
 }
