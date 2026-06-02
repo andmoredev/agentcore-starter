@@ -28,6 +28,7 @@ env:
 permissions:
   id-token: write
   contents: read
+  pull-requests: write
 
 jobs:
   prepare-deployment:
@@ -433,3 +434,48 @@ jobs:
           echo "This dev environment automatically deploys when changes are merged to the main branch." >> $GITHUB_STEP_SUMMARY
           echo "The environment name is hardcoded as 'dev' for consistency and predictability." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment deployment URLs on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const cloudFrontUrl = '${{ needs.deploy-frontend-infrastructure.outputs.cloudfront-url }}';
+            const backendApiUrl = '${{ needs.deploy-backend.outputs.api-url }}';
+
+            const body = [
+              '## Deployment Complete',
+              '',
+              '| Resource | URL |',
+              '|----------|-----|',
+              `| **UI** | ${cloudFrontUrl} |`,
+              `| **API** | ${backendApiUrl} |`,
+              '',
+              `> Deployed from commit \`${context.sha.substring(0, 7)}\``,
+            ].join('\n');
+
+            // Find existing deployment comment to update instead of creating duplicates
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const marker = '## Deployment Complete';
+            const existing = comments.find(c => c.body.startsWith(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
