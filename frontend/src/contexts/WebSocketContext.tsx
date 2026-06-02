@@ -12,23 +12,52 @@ interface WebSocketContextType {
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined)
 
+const RECONNECT_BASE_DELAY_MS = 1000
+const RECONNECT_MAX_DELAY_MS = 30000
+
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth()
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected')
   const wsServiceRef = useRef<WebSocketService>(new WebSocketService())
+  const reconnectAttemptRef = useRef(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const connectWebSocket = useCallback(async () => {
     try {
       setConnectionStatus('connecting')
-      wsServiceRef.current.disconnect()
+      // Use close() to preserve event listeners across reconnects
+      wsServiceRef.current.close()
       await wsServiceRef.current.connect()
       setConnectionStatus('connected')
+      // Reset backoff on successful connection
+      reconnectAttemptRef.current = 0
       console.log('WebSocket connection ready')
     } catch (error) {
       console.error('Failed to initialize WebSocket:', error)
       setConnectionStatus('disconnected')
     }
   }, [])
+
+  const connectWithBackoff = useCallback(() => {
+    // Clear any pending reconnect timer
+    if (reconnectTimerRef.current !== null) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+
+    const attempt = reconnectAttemptRef.current
+    const delay = Math.min(
+      RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt),
+      RECONNECT_MAX_DELAY_MS
+    )
+    reconnectAttemptRef.current = attempt + 1
+
+    console.log(`Reconnecting in ${delay}ms (attempt ${attempt + 1})`)
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null
+      connectWebSocket()
+    }, delay)
+  }, [connectWebSocket])
 
   // Connect when user is authenticated
   useEffect(() => {
@@ -37,7 +66,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     }
 
     if (user === null && !isLoading) {
-      wsServiceRef.current.disconnect()
+      // Full cleanup on logout: close socket and clear all listeners
+      wsServiceRef.current.destroy()
       setConnectionStatus('disconnected')
     }
   }, [user, isLoading, connectWebSocket])
@@ -62,15 +92,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && !wsServiceRef.current.isConnected()) {
-        console.log('Tab active — reconnecting WebSocket')
-        connectWebSocket()
+        console.log('Tab active - reconnecting WebSocket')
+        connectWithBackoff()
       }
     }
 
     const handleOnline = () => {
       if (!wsServiceRef.current.isConnected()) {
-        console.log('Network restored — reconnecting WebSocket')
-        connectWebSocket()
+        console.log('Network restored - reconnecting WebSocket')
+        connectWithBackoff()
       }
     }
 
@@ -80,13 +110,24 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('online', handleOnline)
+      // Clear any pending reconnect timer on cleanup
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
     }
-  }, [user, isLoading, connectWebSocket])
+  }, [user, isLoading, connectWithBackoff])
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      wsServiceRef.current.disconnect()
+      // Clear any pending reconnect timer
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+      // Full cleanup: close socket and clear listeners
+      wsServiceRef.current.destroy()
     }
   }, [])
 

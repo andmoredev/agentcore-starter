@@ -184,11 +184,11 @@ function Chat() {
   // Auto-send initial query from Home page navigation
   useEffect(() => {
     const initialQuery = (location.state as any)?.initialQuery
-    if (initialQuery && sessionId && !initialQuerySent.current && connectionStatus === 'connected') {
+    if (initialQuery && sessionId && !initialQuerySent.current && connectionStatus === 'connected' && !isLoading) {
       initialQuerySent.current = true
       sendMessage(initialQuery)
     }
-  }, [sessionId, location.state, connectionStatus])
+  }, [sessionId, location.state, connectionStatus, isLoading])
 
   // Auto-scroll to bottom
   useEffect(() => {
