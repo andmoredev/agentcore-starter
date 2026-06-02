@@ -44,7 +44,7 @@ jobs:
       resource_prefix: ${{ steps.prepare-parameters.outputs.resource_prefix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Read project config
         id: config
@@ -93,10 +93,10 @@ jobs:
       package-size: ${{ steps.package.outputs.package-size }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: us-east-1
           role-to-assume: ${{ secrets.PIPELINE_EXECUTION_ROLE }}
@@ -147,20 +147,20 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -228,10 +228,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -297,10 +297,10 @@ jobs:
     needs: [deploy-frontend-infrastructure, deploy-backend, prepare-deployment]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
@@ -311,7 +311,7 @@ jobs:
         run: npm ci
 
       - name: Configure AWS for API config fetch
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -334,7 +334,7 @@ jobs:
           npm run build:with-api
 
       - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.PIPELINE_EXECUTION_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -437,7 +437,7 @@ jobs:
 
       - name: Comment deployment URLs on PR
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const cloudFrontUrl = '${{ needs.deploy-frontend-infrastructure.outputs.cloudfront-url }}';
