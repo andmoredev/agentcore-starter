@@ -34,6 +34,8 @@ function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const initialQuerySent = useRef(false)
   const wsServiceRef = useRef<WebSocketService | null>(null)
+  const streamingTextRef = useRef('')
+  const thinkingTextRef = useRef('')
 
   // Generate a session ID if we don't have one
   useEffect(() => {
@@ -126,15 +128,24 @@ function Chat() {
       // Move any text accumulated so far into thinking
       setStreamingText(prev => {
         if (prev) {
-          setThinkingText(t => t + prev)
+          setThinkingText(t => {
+            const newThinking = t + prev
+            thinkingTextRef.current = newThinking
+            return newThinking
+          })
         }
+        streamingTextRef.current = ''
         return ''
       })
     }
 
     // Handle text streaming
     if (event.data) {
-      setStreamingText(prev => prev + event.data)
+      setStreamingText(prev => {
+        const newText = prev + event.data
+        streamingTextRef.current = newText
+        return newText
+      })
     }
 
     // Log lifecycle events
@@ -144,24 +155,30 @@ function Chat() {
       console.log('▶️ Agent started processing')
     } else if (event.complete) {
       console.log('✅ Agent completed')
+      handleComplete()
     }
   }
 
   // Handle completion of streaming
   const handleComplete = () => {
-    if (streamingText || thinkingText) {
+    const currentStreamingText = streamingTextRef.current
+    const currentThinkingText = thinkingTextRef.current
+
+    if (currentStreamingText || currentThinkingText) {
       const agentMessage: Message = {
         id: Date.now().toString(),
-        text: streamingText,
-        ...(thinkingText ? { thinking: thinkingText } : {}),
+        text: currentStreamingText,
+        ...(currentThinkingText ? { thinking: currentThinkingText } : {}),
         sender: 'agent',
         timestamp: new Date()
       }
       setMessages(prev => [...prev, agentMessage])
-      setStreamingText('')
-      setThinkingText('')
     }
 
+    streamingTextRef.current = ''
+    thinkingTextRef.current = ''
+    setStreamingText('')
+    setThinkingText('')
     setCurrentTool(null)
     setIsLoading(false)
   }
@@ -179,6 +196,8 @@ function Chat() {
     }
 
     setMessages(prev => [...prev, errorMessage])
+    streamingTextRef.current = ''
+    thinkingTextRef.current = ''
     setStreamingText('')
     setThinkingText('')
     setCurrentTool(null)
@@ -191,7 +210,29 @@ function Chat() {
     console.log('🔌 WebSocket connection closed')
   }
 
-  // Send message via WebSocket
+  // Send a specific message directly (used for auto-send from Home page)
+  const sendMessage = (text: string) => {
+    if (!text.trim() || isLoading || !wsServiceRef.current?.isConnected()) return
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: text.trim(),
+      sender: 'user',
+      timestamp: new Date()
+    }
+
+    setMessages(prev => [...prev, userMessage])
+    setInputText('')
+    setIsLoading(true)
+    streamingTextRef.current = ''
+    thinkingTextRef.current = ''
+    setStreamingText('')
+    setThinkingText('')
+
+    wsServiceRef.current.sendQuery(text.trim(), sessionId!, user?.sub)
+  }
+
+  // Send message via WebSocket (from input box)
   const handleSendMessage = () => {
     if (!inputText.trim() || isLoading || !wsServiceRef.current?.isConnected()) {
       if (!wsServiceRef.current?.isConnected()) {
@@ -200,24 +241,7 @@ function Chat() {
       return
     }
 
-    const queryText = inputText.trim()
-
-    // Add user message to UI
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text: queryText,
-      sender: 'user',
-      timestamp: new Date()
-    }
-
-    setMessages(prev => [...prev, userMessage])
-    setInputText('')
-    setIsLoading(true)
-    setStreamingText('')
-    setThinkingText('')
-
-    // Send via WebSocket
-    wsServiceRef.current.sendQuery(queryText, sessionId!, user?.sub)
+    sendMessage(inputText)
   }
 
   // Auto-send initial query from Home page navigation
@@ -225,14 +249,7 @@ function Chat() {
     const initialQuery = (location.state as any)?.initialQuery
     if (initialQuery && sessionId && !initialQuerySent.current && wsServiceRef.current?.isConnected()) {
       initialQuerySent.current = true
-      setInputText(initialQuery)
-
-      // Wait a bit for connection to stabilize
-      setTimeout(() => {
-        if (wsServiceRef.current?.isConnected()) {
-          handleSendMessage()
-        }
-      }, 500)
+      sendMessage(initialQuery)
     }
   }, [sessionId, location.state, connectionStatus])
 
